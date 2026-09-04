@@ -913,16 +913,16 @@ function actualizarResumenCheckout() {
    ENVIAR FORMULARIO
 ========================================================= */
 
+/* =========================================================
+   ENVIAR PEDIDO A PHP
+========================================================= */
+
 if (checkoutForm) {
 
-    checkoutForm.addEventListener("submit", event => {
+    checkoutForm.addEventListener("submit", async event => {
 
         event.preventDefault();
 
-
-        /* -----------------------------------------
-           VALIDAR CARRITO
-        ----------------------------------------- */
 
         if (carrito.length === 0) {
 
@@ -936,10 +936,6 @@ if (checkoutForm) {
 
         }
 
-
-        /* -----------------------------------------
-           OBTENER DATOS
-        ----------------------------------------- */
 
         const datos = {
 
@@ -959,14 +955,16 @@ if (checkoutForm) {
                 document.getElementById("direccion").value.trim(),
 
             observaciones:
-                document.getElementById("observaciones").value.trim()
+                document.getElementById("observaciones").value.trim(),
+
+            carrito: carrito
 
         };
 
 
-        /* -----------------------------------------
+        /* =====================================================
            VALIDACIONES
-        ----------------------------------------- */
+        ===================================================== */
 
         if (!datos.nombre) {
 
@@ -1012,50 +1010,254 @@ if (checkoutForm) {
         }
 
 
-        /* -----------------------------------------
-           POR AHORA
-        ----------------------------------------- */
+        /* =====================================================
+           BOTÓN DE CARGA
+        ===================================================== */
 
-        console.log("Datos del cliente:", datos);
-
-        console.log("Carrito:", carrito);
-
-
-        mostrarMensaje(
-            "¡Datos recibidos correctamente! 🛍️"
-        );
+        const botonEnviar =
+            checkoutForm.querySelector(".checkout-submit");
 
 
-        /*
-        -------------------------------------------------
-        EN EL SIGUIENTE PASO:
-
-        Estos datos viajarán a PHP.
-
-        PHP verificará:
-
-        - Productos
-        - Precios reales
-        - Stock
-        - Total
-
-        Luego crearemos:
-
-        pedido
-        +
-        detalle_pedido
-
-        Y finalmente enviaremos el pedido
-        a WhatsApp.
-        -------------------------------------------------
-        */
+        const textoOriginal =
+            botonEnviar
+                ? botonEnviar.textContent
+                : "";
 
 
-        setTimeout(() => {
+        if (botonEnviar) {
+
+            botonEnviar.disabled = true;
+
+            botonEnviar.textContent =
+                "Procesando pedido...";
+
+        }
+
+
+        try {
+
+
+            /* =================================================
+               ENVIAR A PHP
+            ================================================= */
+
+            const respuesta = await fetch(
+                "api/crear_pedido.php",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify(datos)
+
+                }
+            );
+
+
+            const resultado =
+                await respuesta.json();
+
+
+            /* =================================================
+               ERROR DEL SERVIDOR
+            ================================================= */
+
+            if (!resultado.success) {
+
+                throw new Error(
+                    resultado.mensaje ||
+                    "No fue posible crear el pedido."
+                );
+
+            }
+
+
+            /* =================================================
+               DATOS DEL PEDIDO
+            ================================================= */
+
+            const pedido =
+                resultado.datos;
+
+
+            const numeroPedido =
+                pedido.numero_pedido;
+
+
+            const total =
+                pedido.total;
+
+
+            const productos =
+                pedido.productos;
+
+
+            /* =================================================
+               CREAR MENSAJE WHATSAPP
+            ================================================= */
+
+            let mensaje =
+                `🛍️ *NUEVO PEDIDO*\n\n`;
+
+
+            mensaje +=
+                `📋 *Pedido:* ${numeroPedido}\n\n`;
+
+
+            mensaje +=
+                `👤 *Cliente:* ${datos.nombre}\n`;
+
+
+            mensaje +=
+                `📱 *WhatsApp:* ${datos.telefono}\n`;
+
+
+            mensaje +=
+                `📧 *Correo:* ${
+                    datos.email || "No especificado"
+                }\n`;
+
+
+            mensaje +=
+                `📍 *Ciudad:* ${datos.ciudad}\n`;
+
+
+            mensaje +=
+                `🏠 *Dirección:* ${datos.direccion}\n\n`;
+
+
+            mensaje +=
+                `🛒 *PRODUCTOS*\n\n`;
+
+
+            productos.forEach(producto => {
+
+                mensaje +=
+                    `• ${producto.nombre} × ${producto.cantidad}\n`;
+
+                mensaje +=
+                    `  ${formatearPrecio(producto.subtotal)} COP\n\n`;
+
+            });
+
+
+            mensaje +=
+                `💰 *TOTAL: ${formatearPrecio(total)} COP*\n`;
+
+
+            if (datos.observaciones) {
+
+                mensaje +=
+                    `\n📝 *Observaciones:*\n`;
+
+                mensaje +=
+                    `${datos.observaciones}\n`;
+
+            }
+
+
+            mensaje +=
+                `\n🙏 ¡Gracias por tu pedido!`;
+
+
+            /* =================================================
+               CODIFICAR MENSAJE
+            ================================================= */
+
+            const mensajeCodificado =
+                encodeURIComponent(mensaje);
+
+
+            /* =================================================
+               WHATSAPP EMPRESA
+            ================================================= */
+
+            const whatsappEmpresa =
+                "573118463812";
+
+
+            const urlWhatsApp =
+                `https://wa.me/${whatsappEmpresa}?text=${mensajeCodificado}`;
+
+
+            /* =================================================
+               LIMPIAR CARRITO
+            ================================================= */
+
+            carrito = [];
+
+            localStorage.setItem(
+                "bellae_carrito",
+                JSON.stringify(carrito)
+            );
+
+
+            actualizarCarrito();
+
+
+            /* =================================================
+               CERRAR CHECKOUT
+            ================================================= */
 
             cerrarCheckout();
 
-        }, 1000);
+
+            /* =================================================
+               MENSAJE
+            ================================================= */
+
+            mostrarMensaje(
+                `¡Pedido ${numeroPedido} creado correctamente! 🛍️`
+            );
+
+
+            /* =================================================
+               ABRIR WHATSAPP
+            ================================================= */
+
+            setTimeout(() => {
+
+                window.location.href =
+                    urlWhatsApp;
+
+            }, 800);
+
+
+        } catch (error) {
+
+            console.error(
+                "Error creando pedido:",
+                error
+            );
+
+
+            mostrarMensaje(
+                error.message ||
+                "Ocurrió un error al crear el pedido."
+            );
+
+
+        } finally {
+
+
+            /* =================================================
+               RESTAURAR BOTÓN
+            ================================================= */
+
+            if (botonEnviar) {
+
+                botonEnviar.disabled = false;
+
+                botonEnviar.textContent =
+                    textoOriginal;
+
+            }
+
+        }
 
     });
 
